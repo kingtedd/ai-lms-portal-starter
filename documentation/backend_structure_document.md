@@ -1,179 +1,188 @@
 # Backend Structure Document
 
-This document outlines the backend architecture, hosting, and infrastructure for the **codeguide-starter** project. It uses plain language so anyone can understand how the backend is set up and how it supports the application.
+This document outlines the backend architecture, database management, APIs, hosting, infrastructure, and operational practices for the AI-LMS Portal. It is written in clear, everyday language to ensure anyone can understand the setup, from nontechnical team members to developers.
 
 ## 1. Backend Architecture
 
-- **Framework and Design Pattern**
-  - We use **Next.js API Routes** to handle all server-side logic. These routes live alongside the frontend code in the same repository, making development and deployment simpler.
-  - The backend follows a **layered pattern**:
-    1. **API Layer**: Receives requests (login, registration, data fetch).  
-    2. **Service Layer**: Contains the core business logic (user validation, password hashing).  
-    3. **Data Access Layer**: Talks to the database via a simple ORM (e.g., Prisma or TypeORM).
+### Overview
+- We follow a serverless, client-backend model:
+  - The **frontend** is built with Next.js (App Router) and deployed on Vercel.
+  - The **backend** consists of Google Apps Script (GAS) web apps that expose RESTful endpoints to read and write data in Google Sheets.
+- Communication between the frontend and backend happens via a simple API client in the `/lib` folder of the Next.js project.
 
-- **Scalability**
-  - Stateless API routes can scale horizontally—new instances can spin up on demand.  
-  - We can add caching or a message queue (e.g., Redis or RabbitMQ) without changing the core code.
+### Design Patterns and Frameworks
+- **Serverless Functions**: GAS scripts run in Google’s cloud—no server to manage.
+- **RESTful APIs**: Each action (fetch materials, submit feedback, update settings) corresponds to one HTTP endpoint.
+- **Type Safety**: TypeScript interfaces define the shape of data coming from and going to the GAS endpoints.
+- **Client-side Caching**: SWR or React Query caches data in the browser, minimizing network calls and improving perceived performance.
 
-- **Maintainability**
-  - Code for each feature is grouped by route (authentication, dashboard).  
-  - A service layer separates complex logic from request handling.
-
-- **Performance**
-  - Lightweight Node.js handlers keep response times low.  
-  - Future use of database connection pooling and Redis for caching repeated queries.
+### Scalability, Maintainability, and Performance
+- **Scalability**: GAS auto-scales with usage. Vercel automatically distributes traffic across its edge network.
+- **Maintainability**: Clear separation of concerns:
+  - `/lib/apiClient.ts` handles all fetch calls.
+  - `/app` and `/components` focus on UI.
+  - Google Sheets act as a familiar data store.
+- **Performance**: 
+  - Server-side rendering (SSR) and static optimizations in Next.js.
+  - Edge CDN from Vercel speeds up asset delivery.
+  - Client caching avoids repeated fetches.
 
 ## 2. Database Management
 
-- **Database Choice**
-  - We recommend **PostgreSQL** for structured data and reliable transactions.  
-  - In-memory caching can be added later with **Redis** for session tokens or frequently read data.
+### Technologies Used
+- **Data Store**: Google Sheets (acts as a simple NoSQL store).
+- **Configuration Store**: GAS PropertiesService for application settings and small key-value data.
 
-- **Data Storage and Access**
-  - Use an ORM like **Prisma** or **TypeORM** to map JavaScript/TypeScript objects to database tables.
-  - Connection pooling ensures efficient use of database connections under load.
-  - Migrations track schema changes over time, keeping development, staging, and production in sync.
+### Data Structure and Access
+- **Sheets as Tables**: Each Google Sheet represents a logical table (e.g., `Materials`, `Feedback`, `Settings`).
+- **Rows as Records**: The first row holds column names; subsequent rows hold data.
+- **GAS Endpoints**: Scripts use `SpreadsheetApp` to read/write rows and return JSON objects.
+- **Multi-tenancy**: Handled in GAS by filtering rows based on `Session.getActiveUser().getEmail()`.
 
-- **Data Practices**
-  - Passwords are never stored in plain text—they are salted and hashed with **bcrypt** before saving.
-  - All outgoing data is typed and validated to prevent malformed records.
+### Data Management Practices
+- **Backups**: Regular manual or automated exports of Sheets to CSV.
+- **Versioning**: Track Apps Script changes via GitHub integration or clasp (Apps Script CLI).
+- **Access Control**: Only the deployed web-app URL can invoke GAS endpoints; roles enforced in NextAuth.js and in script logic.
 
 ## 3. Database Schema
 
-### Human-Readable Format
+The following outlines each sheet and its columns in a human-friendly way. No SQL code is used because Google Sheets is a NoSQL-style store.
 
-- **Users**
-  - **id**: Unique identifier  
-  - **email**: User’s email address (unique)  
-  - **password_hash**: Securely hashed password  
-  - **created_at**: Account creation timestamp
+1. **Materials Sheet**:
+   - `materialId` (unique string)
+   - `title` (text)
+   - `description` (text)
+   - `uploadedBy` (user email)
+   - `uploadDate` (ISO date string)
+   - `fileUrl` (link to Google Drive)
 
-- **Sessions**
-  - **id**: Unique session record  
-  - **user_id**: Links to a user  
-  - **token**: Random string for authentication  
-  - **expires_at**: When the token stops working  
-  - **created_at**: When the session was created
+2. **Feedback Sheet**:
+   - `feedbackId` (unique string)
+   - `materialId` (reference to Materials)
+   - `studentEmail` (user email)
+   - `comment` (text)
+   - `rating` (number 1–5)
+   - `submittedAt` (ISO date string)
 
-- **DashboardItems** *(optional for dynamic data)*
-  - **id**: Unique record  
-  - **title**: Item title  
-  - **content**: Item details  
-  - **created_at**: When the item was added
+3. **Settings Sheet**:
+   - `settingId` (unique string)
+   - `key` (text)
+   - `value` (text)
+   - `updatedBy` (user email)
+   - `updatedAt` (ISO date string)
 
-### SQL Schema (PostgreSQL)
-```sql
--- Users table
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Sessions table
-CREATE TABLE sessions (
-  id SERIAL PRIMARY KEY,
-  user_id INT REFERENCES users(id) ON DELETE CASCADE,
-  token VARCHAR(255) UNIQUE NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Dashboard items table
-CREATE TABLE dashboard_items (
-  id SERIAL PRIMARY KEY,
-  title TEXT NOT NULL,
-  content TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-```  
+4. **Roles & Users (optional)**:
+   - `userEmail` (primary key)
+   - `role` (IT_ADMIN, GURU, SISWA)
+   - `createdAt` (ISO date string)
+   - `updatedAt` (ISO date string)
 
 ## 4. API Design and Endpoints
 
-- **Approach**: We follow a **RESTful** style, grouping related endpoints under `/api` directories.
+We use RESTful HTTP endpoints exposed by Google Apps Script. All responses are JSON.
 
-- **Key Endpoints**
-  - `POST /api/auth/register`  
-    • Accepts `{ email, password }`  
-    • Creates a new user and issues a session token  
-  - `POST /api/auth/login`  
-    • Accepts `{ email, password }`  
-    • Verifies credentials and returns a session token  
-  - `POST /api/auth/logout`  
-    • Invalidates the session token on the server  
-  - `GET /api/dashboard/data`  
-    • Requires a valid session  
-    • Returns user-specific data or dashboard items  
+1. **GET /materials**
+   - Purpose: Retrieve a list of teaching materials for the logged-in guru.
+   - Query Params: none
+   - Response: Array of material objects.
 
-- **Communication**
-  - Frontend sends JSON requests; backend replies with JSON and appropriate HTTP status codes.  
-  - Protected routes check for a valid session token (in cookies or Authorization header).
+2. **POST /materials**
+   - Purpose: Upload a new material.
+   - Body: `{ title, description, fileBase64 }`
+   - Response: The created material object.
+
+3. **GET /my-feedback**
+   - Purpose: Retrieve feedback submitted by the logged-in student.
+   - Response: Array of feedback objects.
+
+4. **GET /feedback?materialId={id}**
+   - Purpose: Retrieve all feedback for a specific material.
+   - Response: Array of feedback objects.
+
+5. **POST /feedback**
+   - Purpose: Submit feedback on a material.
+   - Body: `{ materialId, comment, rating }`
+   - Response: The created feedback object.
+
+6. **GET /settings**
+   - Purpose: Administrator fetches application settings.
+   - Response: Array of key-value pairs.
+
+7. **POST /settings**
+   - Purpose: Administrator updates a setting.
+   - Body: `{ key, value }`
+   - Response: The updated key-value object.
 
 ## 5. Hosting Solutions
 
-- **Cloud Provider**:  
-  - **Vercel** (recommended) offers seamless Next.js deployments, auto-scaling, and built-in CDN.  
-  - Alternatively, **Netlify** or any Node.js-capable host will work.
+### Frontend (Next.js)
+- **Provider**: Vercel
+- **Model**: Serverless + Edge CDN
+- **Benefits**:
+  - Zero-config deployments on `git push`
+  - Global CDN for fast asset delivery
+  - Automatic SSL/TLS
+  - Built-in analytics and logs
+  - Pay-as-you-go pricing
 
-- **Benefits**
-  - **Reliability**: Global servers and failover across regions.  
-  - **Scalability**: Auto-scale serverless functions based on traffic.  
-  - **Cost-Effectiveness**: Pay-per-use model means low cost for small projects.
+### Backend (GAS Web Apps)
+- **Provider**: Google Cloud via Apps Script
+- **Model**: Serverless execution environment
+- **Benefits**:
+  - Integrated with Google Sheets and Drive
+  - Auto-scales with traffic
+  - No server maintenance
+  - Free tier available
 
 ## 6. Infrastructure Components
 
-- **Load Balancer**
-  - Provided by the hosting platform—distributes API requests across function instances.
-
-- **CDN (Content Delivery Network)**
-  - Vercel’s global edge network caches static assets (CSS, JS, images) for faster page loads.
-
-- **Caching**
-  - **Redis** (optional) for session storage or caching dashboard queries to reduce database load.
-
-- **Object Storage**
-  - For file uploads or backups, integrate with AWS S3 or similar services.
-
-- **Message Queue**
-  - In future, use **RabbitMQ** or **Kafka** for background tasks (e.g., email notifications).
+- **CDN**: Vercel Edge Network caches static assets and SSR pages.
+- **Load Balancing**: Handled automatically by Vercel’s platform.
+- **Caching**:
+  - **Client-side**: SWR/React Query caches API responses in memory.
+  - **Edge**: Vercel’s CDN caches unchanged pages and assets.
+- **File Storage**: Google Drive stores uploaded files; URLs returned by GAS.
+- **Environment Variables**: Managed by Vercel for Next.js and by Apps Script PropertiesService for GAS secrets (e.g., Drive folder IDs).
 
 ## 7. Security Measures
 
-- **Authentication & Authorization**
-  - Passwords hashed with **bcrypt** and salted.  
-  - Session tokens stored in secure, HttpOnly cookies or Authorization headers.  
-  - Protected endpoints verify tokens before proceeding.
-
-- **Data Encryption**
-  - **HTTPS/TLS** encrypts data in transit.  
-  - Database connections use SSL to encrypt data between the app and the database.
-
-- **Input Validation**
-  - Every incoming request is validated (e.g., valid email format, password length) to prevent SQL injection or other attacks.
-
-- **Web Security Best Practices**
-  - Enable **CORS** policies to limit allowed origins.  
-  - Use **CSRF tokens** or same-site cookies to prevent cross-site requests.  
-  - Set secure headers with **Helmet** or a similar middleware.
+- **Authentication**:
+  - NextAuth.js with Google OAuth provider handles user sign-in and session management.
+  - HTTPS enforced by Vercel and GAS endpoints.
+- **Authorization**:
+  - Roles (IT_ADMIN, GURU, SISWA) assigned in NextAuth callback and stored in session.
+  - Frontend route guards (protected server routes in Next.js) block unauthorized access.
+  - GAS scripts re-validate `Session.getActiveUser().getEmail()` and optional custom user store to double-check roles.
+- **Data Encryption**:
+  - All data in transit is encrypted via TLS.
+  - Google Sheets and Drive data is encrypted at rest by Google.
+- **Secrets Management**:
+  - API URLs and OAuth credentials stored in environment variables on Vercel.
+  - GAS script keys and folder IDs stored in PropertiesService (script-level environment storage).
+- **CORS**: GAS endpoints allow only requests from your Next.js origin.
 
 ## 8. Monitoring and Maintenance
 
-- **Performance Monitoring**
-  - Integrate **Sentry** or **LogRocket** for real-time crash reporting and performance tracing.  
-  - Use Vercel’s built-in analytics to track request latencies and error rates.
-
-- **Logging**
-  - Structured logs (JSON) for all API requests and errors, shipped to a log management service like **Datadog** or **Logflare**.
-
-- **Health Checks**
-  - Define a `/health` endpoint that returns a 200 status if the service is up and the database is reachable.
-
-- **Maintenance Strategies**
-  - Automated migrations run on deploy to keep the database schema up to date.  
-  - Scheduled dependency audits and security scans (e.g., `npm audit`).
-  - Regular backups of the database (daily or weekly depending on usage).
+- **Monitoring Tools**:
+  - **Vercel Dashboard**: Deploy logs, usage metrics, request analytics.
+  - **Google Cloud Logs**: Execution logs for Apps Script triggers and web app calls.
+  - **Sentry** (recommended): Capture frontend errors and API failures.
+- **Alerts**:
+  - Configure email or Slack alerts for error rate spikes via Vercel and Sentry.
+- **Maintenance Strategies**:
+  - **Automated CI/CD**: Vercel auto-deploys on `main` branch merges.
+  - **Dependency Updates**: Use Dependabot or Renovate to keep Next.js and npm packages up to date.
+  - **Backups**: Schedule daily exports of Sheets to another Drive folder or GitHub.
+  - **Health Checks**: Periodic smoke tests for API endpoints, e.g., via GitHub Actions or external uptime monitors.
 
 ## 9. Conclusion and Overall Backend Summary
 
-The backend for **codeguide-starter** is built on Next.js API Routes and Node.js, paired with PostgreSQL for data and optional Redis for caching. It follows a clear layered architecture that keeps code easy to maintain and extend. With RESTful endpoints for authentication and data, secure practices like password hashing and HTTPS, and hosting on Vercel for scalability and global performance, this setup meets the project’s goals for a fast, secure, and developer-friendly foundation. Future enhancements—such as background job queues, advanced monitoring, or richer data models—can be added without disrupting the core structure.
+The AI-LMS Portal backend leverages a serverless, lightweight architecture split between Next.js on Vercel and Google Apps Script with Google Sheets. This setup:
+
+- Meets scalability needs with automatic cloud scaling.
+- Ensures maintainability through clear folder structures (`/lib` for API, `/app` for pages, `/components` for UI).
+- Delivers fast performance via CDN and client-side caching.
+- Secures data with OAuth, role-based guards, and encrypted communications.
+- Offers cost-effective hosting with generous free tiers.
+
+Unique aspects include the use of Google Sheets as a familiar, low-maintenance data store and the GAS-based multi-tenant filtering that transparently enforces access rules. Together, these components form a reliable, easy-to-understand backend that enables rapid development and straightforward operation of the AI-LMS Portal.

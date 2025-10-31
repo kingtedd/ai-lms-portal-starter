@@ -1,117 +1,86 @@
-# Project Requirements Document: codeguide-starter
-
----
+# Project Requirements Document (PRD)
 
 ## 1. Project Overview
 
-The **codeguide-starter** project is a boilerplate web application that provides a ready-made foundation for any web project requiring secure user authentication and a post-login dashboard. It sets up the common building blocks—sign-up and sign-in pages, API routes to handle registration and login, and a simple dashboard interface driven by static data. By delivering this skeleton, it accelerates development time and ensures best practices are in place from day one.
+The AI-LMS Portal is a modern web application built as a starter kit to accelerate development of a full-featured Learning Management System (LMS) powered by AI and Google Apps Script (GAS). It provides a pre-configured architecture using Next.js for the frontend, `shadcn/ui` and Tailwind CSS for styling, and NextAuth.js with Google OAuth for authentication. Instead of a traditional database, it connects to GAS endpoints that read and write data in Google Sheets, enabling multi-tenant support and role-based access out of the box.
 
-This starter kit is being built to solve the friction developers face when setting up repeated common tasks: credential handling, session management, page routing, and theming. Key objectives include: 1) delivering a fully working authentication flow (registration & login), 2) providing a gated dashboard area upon successful login, 3) establishing a clear, maintainable project structure using Next.js and TypeScript, and 4) demonstrating a clean theming approach with global and section-specific CSS. Success is measured by having an end-to-end login journey in under 200 lines of code and zero runtime type errors.
-
----
+We’re building this starter kit so schools and educators can quickly launch a customized LMS without reinventing foundational features like sign-in flows, protected dashboards, data tables, and charts. The key success criteria are: 1) Seamless Google sign-in with automatic role assignment (IT_ADMIN, GURU, SISWA); 2) Dynamic dashboards that fetch live data from GAS; 3) A clean, responsive UI that adapts to desktop and mobile; and 4) A clear code structure that new developers can easily extend or replace with their own business logic.
 
 ## 2. In-Scope vs. Out-of-Scope
 
-### In-Scope (Version 1)
-- User registration (sign-up) form with validation
-- User login (sign-in) form with validation
-- Next.js API routes under `/api/auth/route.ts` handling:
-  - Credential validation
-  - Password hashing (e.g., bcrypt)
-  - Session creation or JWT issuance
-- Protected dashboard pages under `/dashboard`:
-  - `layout.tsx` wrapping dashboard content
-  - `page.tsx` rendering static data from `data.json`
-- Global application layout in `/app/layout.tsx`
-- Basic styling via `globals.css` and `dashboard/theme.css`
-- TypeScript strict mode enabled
+**In-Scope (Version 1.0)**
+- NextAuth.js integration with Google Provider for authentication and role management.
+- Protected routes for three roles: IT_ADMIN, GURU (teacher), SISWA (student).
+- Page templates: `/` (login), `/dashboard` (teacher overview), `/materials` (teacher material management), `/my-feedback` (student feedback), `/admin/settings` (admin portal).
+- Data fetch calls from GAS web apps using a lightweight API client in `/lib` and SWR or React Query for state management.
+- Pre-built UI components (data tables, charts) from `shadcn/ui`, wired to live data.
+- File upload form on `/materials` that sends base64-encoded files to GAS.
+- Print stylesheet (`@media print`) for the teacher’s dashboard report.
+- Docker configuration for optional local environment consistency.
+- Deployment ready for Vercel with environment variables for GAS URLs.
 
-### Out-of-Scope (Later Phases)
-- Integration with a real database (PostgreSQL, MongoDB, etc.)
-- Advanced authentication flows (password reset, email verification, MFA)
-- Role-based access control (RBAC)
-- Multi-tenant or white-label theming
-- Unit, integration, or end-to-end testing suites
-- CI/CD pipeline and production deployment scripts
-
----
+**Out-of-Scope (Version 1.0)**
+- Traditional relational database setup (Drizzle ORM, PostgreSQL).
+- Mobile-specific native apps (React Native, SwiftUI).
+- Advanced analytics beyond basic charts (machine-learning recommendations).
+- Integration with external LMS platforms (Canvas, Moodle).
+- Multi-language (i18n) support.
+- Offline mode or PWA features.
 
 ## 3. User Flow
 
-A new visitor lands on the root URL and sees a welcome page with options to **Sign Up** or **Sign In**. If they choose Sign Up, they fill in their email, password, and hit “Create Account.” The form submits to `/api/auth/route.ts`, which hashes the password, creates a new user session or token, and redirects them to the dashboard. If any input is invalid, an inline error message explains the issue (e.g., “Password too short”).
+A new user visits the portal’s home page (`/`) and clicks “Sign in with Google.” NextAuth.js directs them through Google’s OAuth flow, then determines their role by examining the authenticated email against a predefined list in GAS. Once authenticated, the user is redirected to their role-specific landing page: teachers go to `/dashboard`, students to `/my-feedback`, and admins to `/admin/settings`. All subsequent requests include a session token; if a user tries to access a page they’re not authorized for, they’re redirected back to the login page with an error message.
 
-Once authenticated, the user is taken to the `/dashboard` route. Here they see a sidebar or header defined by `dashboard/layout.tsx`, and the main panel pulls in static data from `data.json`. They can log out (if that control is present), but otherwise their entire session is managed by server-side cookies or tokens. Returning users go directly to Sign In, submit credentials, and upon success they land back on `/dashboard`. Any unauthorized access to `/dashboard` redirects back to Sign In.
-
----
+On their landing page, users see a top navigation bar and a left sidebar (teachers and admins only). Teachers view class statistics and student summaries in interactive charts and tables, then navigate to `/materials` to upload or edit course materials. Students visit `/my-feedback` to read personalized comments and grades. Admins can adjust system settings, manage user-role mappings, and view global usage reports in `/admin/settings`. Each page fetches data from GAS, handles loading and error states gracefully, and displays user-friendly notifications.
 
 ## 4. Core Features
 
-- **Sign-Up Page (`/app/sign-up/page.tsx`)**: Form fields for email & password, client-side validation, POST to `/api/auth`.
-- **Sign-In Page (`/app/sign-in/page.tsx`)**: Form fields for email & password, client-side validation, POST to `/api/auth`.
-- **Authentication API (`/app/api/auth/route.ts`)**: Handles both registration and login based on HTTP method, integrates password hashing (bcrypt) and session or JWT logic.
-- **Global Layout (`/app/layout.tsx` + `globals.css`)**: Shared header, footer, and CSS resets across all pages.
-- **Dashboard Layout (`/app/dashboard/layout.tsx` + `dashboard/theme.css`)**: Sidebar or top nav for authenticated flows, section-specific styling.
-- **Dashboard Page (`/app/dashboard/page.tsx`)**: Reads `data.json`, renders it as cards or tables.
-- **Static Data Source (`/app/dashboard/data.json`)**: Example dataset to demo dynamic rendering.
-- **TypeScript Configuration**: `tsconfig.json` with strict mode and path aliases (if any).
-
----
+- **Authentication & Role Management**: Sign-up/sign-in with Google OAuth via NextAuth.js, automatic assignment of IT_ADMIN, GURU, SISWA roles, protected server-side routes.
+- **Dynamic Dashboards**: Interactive data tables and charts showing class performance, student feedback, and admin metrics using `shadcn/ui` components.
+- **API Client for GAS**: Lightweight fetch wrapper in `/lib/api.ts` with typed TypeScript interfaces for endpoints like `GET /materials`, `POST /materials`, `GET /my-feedback`, `GET/POST /settings`.
+- **Material Upload**: File input form on `/materials`; files converted to base64 and sent to GAS endpoint with metadata.
+- **Role-Based Navigation**: Conditional rendering of menus and pages based on `session.user.role`.
+- **Print-Ready Reports**: Dedicated CSS rules under `@media print` to format teacher dashboards for printing via `window.print()`.
+- **State Management**: SWR (Stale-While-Revalidate) or React Query to fetch, cache, and update data.
+- **Error Handling & Notifications**: Global error boundary, toast notifications for success/failure, retries for transient network errors.
 
 ## 5. Tech Stack & Tools
 
-- **Framework**: Next.js (App Router) for file-based routing, SSR/SSG, and API routes.
-- **Language**: TypeScript for type safety.
-- **UI Library**: React 18 for component-based UI.
-- **Styling**: Plain CSS via `globals.css` (global reset) and `theme.css` (sectional styling). Can easily migrate to CSS Modules or Tailwind in the future.
-- **Backend**: Node.js runtime provided by Next.js API routes.
-- **Password Hashing**: bcrypt (npm package).
-- **Session/JWT**: NextAuth.js or custom JWT logic (to be decided in implementation).
-- **IDE & Dev Tools**: VS Code with ESLint, Prettier extensions. Optionally, Cursor.ai for AI-assisted coding.
-
----
+- **Frontend Framework**: Next.js (App Router) with React Server Components.
+- **Language**: TypeScript for end-to-end type safety.
+- **Authentication**: NextAuth.js with Google Provider (OAuth2-based).
+- **UI Library**: `shadcn/ui` for reusable components; Tailwind CSS for utility-first styling.
+- **Data Fetching**: SWR or React Query.
+- **Backend**: Google Apps Script (GAS) Web Apps acting as REST-like endpoints; data stored in Google Sheets.
+- **Containerization**: Docker (optional) for local dev environment.
+- **Hosting & CI/CD**: Vercel for automatic builds and deployments.
+- **VS Code Plugins**: ESLint, Prettier, Tailwind CSS IntelliSense.
 
 ## 6. Non-Functional Requirements
 
-- **Performance**: Initial page load under 200 ms on a standard broadband connection. API responses under 300 ms.
-- **Security**:
-  - HTTPS only in production.
-  - Proper CORS, CSRF protection for API routes.
-  - Secure password storage (bcrypt with salt).
-  - No credentials or secrets checked into version control.
-- **Scalability**: Structure must support adding database integration, caching layers, and advanced auth flows without rewiring core app.
-- **Usability**: Forms should give real-time feedback on invalid input. Layout must be responsive (mobile > 320 px).
-- **Maintainability**: Code must adhere to TypeScript strict mode. Linting & formatting enforced by ESLint/Prettier.
-
----
+- **Performance**: Initial page load under 2 seconds on 4G; subsequent API calls under 500ms.
+- **Security**: OAuth2 flows secured by NextAuth.js; CSRF protection; server-side session checks; sanitize all user inputs to prevent XSS.
+- **Usability & Accessibility**: WCAG 2.1 AA compliance; responsive design for mobile and desktop; keyboard navigation; ARIA labels on form controls.
+- **Reliability**: 99.9% uptime on Vercel; retry logic for transient failures; fallback UIs for network errors.
+- **Scalability**: Support hundreds of concurrent users per school; GAS quotas respected via caching and batching where possible.
 
 ## 7. Constraints & Assumptions
 
-- **No Database**: Dashboard uses only `data.json`; real database integration is deferred.
-- **Node Version**: Requires Node.js >= 14.
-- **Next.js Version**: Built on Next.js 13+ App Router.
-- **Authentication**: Assumes availability of bcrypt or NextAuth.js at implementation time.
-- **Hosting**: Targets serverless or Node.js-capable hosting (e.g., Vercel, Netlify).
-- **Browser Support**: Modern evergreen browsers; no IE11 support required.
-
----
+- Google Apps Script APIs must be deployed with web app URLs exposed and properly set up for cross-origin requests.
+- Users must have Google Workspace or personal Google accounts.
+- No relational database in version 1.0; all data lives in Google Sheets via GAS.
+- Vercel hosting environment; environment variables (`NEXTAUTH_URL`, `GAS_API_BASE_URL`, etc.) handled via `.env.local`.
+- Docker is optional and not required for deployment.
 
 ## 8. Known Issues & Potential Pitfalls
 
-- **Static Data Limitation**: `data.json` is only for demo. A real API or database will be needed to avoid stale data.
-  *Mitigation*: Define a clear interface for data fetching so swapping to a live endpoint is trivial.
+- **GAS Rate Limits**: Google Apps Script enforces per-minute quotas. Mitigate by implementing client-side caching and debouncing repeated requests.
+- **CORS Errors**: If the GAS web app isn’t configured with `doGet(e) { return ContentService.create... }.setAccessControlAllowOrigin('*')`, fetch calls will fail. Always set proper HTTP headers.
+- **Large File Uploads**: Base64 encoding inflates file size by ~33%. Consider chunked uploads or size limits (e.g., 5 MB max).
+- **Stale Data**: SWR/React Query default stale times may not match real-time needs. Configure revalidation intervals or manual refetch on key actions.
+- **Print Layout Variations**: Browser differences in print CSS may cause layout shifts. Test on Chrome, Firefox, and Edge, and use explicit page-break rules.
 
-- **Global CSS Conflicts**: Using global styles can lead to unintended overrides.
-  *Mitigation*: Plan to migrate to CSS Modules or utility-first CSS in Phase 2.
-
-- **API Route Ambiguity**: Single `/api/auth/route.ts` handling both sign-up and sign-in could get complex.
-  *Mitigation*: Clearly branch on HTTP method (`POST /register` vs. `POST /login`) or split into separate files.
-
-- **Lack of Testing**: No test suite means regressions can slip in.
-  *Mitigation*: Build a minimal Jest + React Testing Library setup in an early iteration.
-
-- **Error Handling Gaps**: Client and server must handle edge cases (network failures, malformed input).
-  *Mitigation*: Define a standard error response schema and show user-friendly messages.
 
 ---
 
-This PRD should serve as the single source of truth for the AI model or any developer generating the next set of technical documents: Tech Stack Doc, Frontend Guidelines, Backend Structure, App Flow, File Structure, and IDE Rules. It contains all functional and non-functional requirements with no ambiguity, enabling seamless downstream development.
+This PRD contains all necessary details for the AI model to generate technical specifications, frontend guidelines, backend structure, and deployment instructions without ambiguity. Feel free to use it as the single source of truth for the project’s next phases.
