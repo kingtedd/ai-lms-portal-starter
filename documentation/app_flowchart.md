@@ -1,14 +1,1 @@
-flowchart TD
-  Start[Landing Page]
-  SignUpPage[Sign Up Page]
-  SignInPage[Sign In Page]
-  AuthAPI[Authentication API Endpoint]
-  DashboardPage[Dashboard Page]
-  Start -->|Select Sign Up| SignUpPage
-  Start -->|Select Sign In| SignInPage
-  SignUpPage -->|Submit Credentials| AuthAPI
-  SignInPage -->|Submit Credentials| AuthAPI
-  AuthAPI -->|Success| DashboardPage
-  AuthAPI -->|Error| SignUpPage
-  AuthAPI -->|Error| SignInPage
-  DashboardPage -->|Click Logout| Start
+flowchart TD\n    A[Login Page] --> B{Authenticated?}\n    B -->|Yes| C{Determine Role}\n    B -->|No| D[Show Login Page]\n    C -->|IT_ADMIN| E[Admin Settings Portal]\n    C -->|GURU| F[Guru Dashboard]\n    C -->|SISWA| G[Siswa My Feedback Page]\n    E --> H[Fetch Admin Settings]\n    F --> I[Manage Materials]\n    I --> J[Upload Material File]\n    F --> K[View Guru Reports]\n    K --> L[Print Report]\n    G --> M[Fetch Student Feedback]\n    G --> N[Submit Student Feedback]

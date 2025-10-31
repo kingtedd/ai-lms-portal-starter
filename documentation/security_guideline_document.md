@@ -1,116 +1,106 @@
-# Security Guidelines for codeguide-starter
+# Security Guidelines for ai-lms-portal-starter
 
-This document defines mandatory security principles and implementation best practices tailored to the **codeguide-starter** repository. It aligns with Security-by-Design, Least Privilege, Defense-in-Depth, and other core security tenets. All sections reference specific areas of the codebase (e.g., `/app/api/auth/route.ts`, CSS files, environment configuration) to ensure practical guidance.
-
----
-
-## 1. Security by Design
-
-• Embed security from day one: review threat models whenever adding new features (e.g., new API routes, data fetching).
-• Apply “secure defaults” in Next.js configuration (`next.config.js`), enabling strict mode and disabling debug flags in production builds.
-• Maintain a security checklist in your PR template to confirm that each change has been reviewed against this guideline.
+This document outlines security best practices tailored to the **ai-lms-portal-starter** codebase. Adhere to these guidelines throughout design, development, testing, and deployment to ensure a robust, secure AI-LMS Portal.
 
 ---
 
-## 2. Authentication & Access Control
+## 1. Authentication & Access Control
 
-### 2.1 Password Storage
-- Use **bcrypt** (or Argon2) with a per-user salt to hash passwords in `/app/api/auth/route.ts`.
-- Enforce a strong password policy on both client and server: minimum 12 characters, mixed case, numbers, and symbols.
+- **NextAuth.js with Google Provider**
+  - Enforce Google OAuth as the single sign-on mechanism.
+  - In `[...nextauth].ts`, validate tokens using the recommended algorithms (RS256).
+  - Reject any tokens with algorithm `none` or missing signatures.
+- **Role-Based Access Control (RBAC)**
+  - Map Google email domains or specific addresses to roles (`IT_ADMIN`, `GURU`, `SISWA`) in the `callbacks.signIn` or `callbacks.jwt` hooks.
+  - Protect server and API routes via `getServerSession` and middleware. Only allow authorized roles to access `/dashboard`, `/materials`, `/my-feedback`, `/admin/settings`.
+  - Fallback: redirect unauthorized requests to a safe error page without revealing internal details.
+- **Session Management**
+  - Enable secure, HTTP-only cookies with `SameSite=Lax` or `Strict`, and `Secure` flags under HTTPS.
+  - Configure short-lived session cookies and rotate JWTs on each sign-in.
+  - Provide a logout endpoint that invalidates sessions both client- and server-side.
+- **Multi-Factor Authentication (MFA)**
+  - Consider optional TOTP or SMS-based MFA for `IT_ADMIN` role to protect administrative functions.
+  - Leverage NextAuth.js built-in support or integrate a third-party MFA library.
 
-### 2.2 Session Management
-- Issue sessions via Secure, HttpOnly, SameSite=strict cookies. Do **not** expose tokens to JavaScript.
-- Implement absolute and idle timeouts. For example, invalidate sessions after 30 minutes of inactivity.
-- Protect against session fixation by regenerating session IDs after authentication.
+## 2. Input Handling & Processing
 
-### 2.3 Brute-Force & Rate Limiting
-- Apply rate limiting at the API layer (e.g., using `express-rate-limit` or Next.js middleware) on `/api/auth` to throttle repeated login attempts.
-- Introduce exponential backoff or temporary lockout after N failed attempts.
+- **Server-Side Validation**
+  - Never trust client input. Validate all payloads on API routes in `/app/api/*` using a schema validator (e.g., Zod or Yup).
+  - Define TypeScript schemas for `MaterialCreateRequest`, `FeedbackUpdate`, `AdminSettings`.
+- **Prevent Injection & XSS**
+  - Sanitize any HTML or rich text fields (e.g., feedback comments) before rendering. Use a whitelist sanitizer like DOMPurify.
+  - For all database-like operations with Google Sheets/GAS, parameterize values to avoid script injection.
+- **File Uploads** (`/materials`)
+  - Verify file extensions (`.pdf`, `.docx`, `.png`, etc.) and MIME types on the client and server.
+  - Enforce a maximum file size (e.g., 5 MB).
+  - Convert files to Base64 client-side, then validate length and content on the GAS backend before writing to Drive/Sheets.
+  - Store uploads outside the public webroot or in a dedicated Google Drive folder with restricted permissions.
+- **Redirect Validation**
+  - If performing any dynamic redirects (e.g., after login), ensure target URLs are on an allow-list (our domain or subpaths).
 
-### 2.4 Role-Based Access Control (Future)
-- Define user roles in your database model (e.g., `role = 'user' | 'admin'`).
-- Enforce server-side authorization checks in every protected route (e.g., in `dashboard/layout.tsx` loader functions).
+## 3. Data Protection & Privacy
 
----
+- **Encryption in Transit & at Rest**
+  - Enforce HTTPS (TLS 1.2+) on Vercel. Redirect all HTTP traffic to HTTPS via `next.config.js` or `vercel.json`.
+  - For sensitive data stored in Google Sheets or Drive, rely on Google’s encryption at rest.
+- **Secrets Management**
+  - Store OAuth credentials (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`), GAS Web App URL, and any API keys in environment variables (`.env.local`).
+  - Do **not** commit `.env` files. Use Vercel’s secret management in production.
+- **Password Storage**
+  - If adding any custom password fields, use Argon2 or bcrypt with unique salts. Prefer OAuth over custom passwords.
+- **PII & Data Minimization**
+  - Only request and persist the minimum set of user data (email, name, role).
+  - Mask or truncate any PII in logs or error messages.
+  - Implement a data retention policy: regularly purge obsolete feedback entries if required by regulation.
 
-## 3. Input Handling & Processing
+## 4. API & Service Security
 
-### 3.1 Validate & Sanitize All Inputs
-- On **client** (`sign-up/page.tsx`, `sign-in/page.tsx`): perform basic format checks (email regex, password length).
-- On **server** (`/app/api/auth/route.ts`): re-validate inputs with a schema validator (e.g., `zod`, `Joi`).
-- Reject or sanitize any unexpected fields to prevent injection attacks.
+- **Rate Limiting & Throttling**
+  - Protect critical API routes (`/api/materials`, `/api/feedback`) against brute-force or DoS by applying a rate limiter (e.g., `express-rate-limit` or a Vercel edge function).
+- **CORS Configuration**
+  - Restrict CORS to approved origins (your Vercel domain). Disallow wildcard (`*`) origins.
+- **HTTP Methods & Status Codes**
+  - Enforce proper verbs (`GET` for reads, `POST` for creates, `PUT/PATCH` for updates, `DELETE` for removals).
+  - Return appropriate status codes and avoid leaking stack traces or internal errors.
+- **API Versioning**
+  - If evolving APIs, prefix routes (e.g., `/api/v1/materials`) to avoid breaking changes.
 
-### 3.2 Prevent Injection
-- If you introduce a database later, always use parameterized queries or an ORM (e.g., Prisma) rather than string concatenation.
-- Avoid dynamic `eval()` or template rendering with unsanitized user input.
+## 5. Web Application Security Hygiene
 
-### 3.3 Safe Redirects
-- When redirecting after login or logout, validate the target against an allow-list to prevent open redirects.
+- **CSRF Protection**
+  - Use built-in NextAuth.js CSRF tokens on all state-changing POST routes.
+- **Security Headers** (via `next.config.js` or a custom `middleware.ts`)
+  - `Content-Security-Policy`: restrict script sources to self and trusted domains (e.g., Google APIs).
+  - `Strict-Transport-Security`: `max-age=63072000; includeSubDomains; preload`.
+  - `X-Frame-Options`: `DENY` or `SAMEORIGIN`.
+  - `X-Content-Type-Options`: `nosniff`.
+  - `Referrer-Policy`: `strict-origin-when-cross-origin`.
+- **Cookie Security**
+  - All session and CSRF cookies should be flagged `HttpOnly`, `Secure`, and `SameSite=Strict` (or Lax for login flows).
+- **Subresource Integrity (SRI)**
+  - If loading any third-party scripts/styles, use SRI hashes to ensure content hasn’t been tampered with.
 
----
+## 6. Infrastructure & Configuration Management
 
-## 4. Data Protection & Privacy
+- **Vercel Production Hardening**
+  - Disable Next.js dev mode. Ensure `NODE_ENV=production`.
+  - Turn off verbose error reporting. Use a custom error page that logs details server-side but shows a generic message client-side.
+- **Environment Separation**
+  - Maintain separate Vercel projects/environments for dev, staging, production.
+  - Use environment-specific secrets for OAuth and GAS URLs.
+- **Dependency & Port Hardening**
+  - Only expose the Next.js default port internally; rely on Vercel’s edge network for external traffic.
 
-### 4.1 Encryption & Secrets
-- Enforce HTTPS/TLS 1.2+ for all front-end ↔ back-end communications.
-- Never commit secrets—use environment variables and a secrets manager (e.g., AWS Secrets Manager, Vault).
+## 7. Dependency Management
 
-### 4.2 Sensitive Data Handling
-- Do ​not​ log raw passwords, tokens, or PII in server logs. Mask or redact any user identifiers.
-- If storing PII in `data.json` or a future database, classify it and apply data retention policies.
-
----
-
-## 5. API & Service Security
-
-### 5.1 HTTPS Enforcement
-- In production, redirect all HTTP traffic to HTTPS (e.g., via Vercel’s redirect rules or custom middleware).
-
-### 5.2 CORS
-- Configure `next.config.js` or API middleware to allow **only** your front-end origin (e.g., `https://your-domain.com`).
-
-### 5.3 API Versioning & Minimal Exposure
-- Version your API routes (e.g., `/api/v1/auth`) to handle future changes without breaking clients.
-- Return only necessary fields in JSON responses; avoid leaking internal server paths or stack traces.
-
----
-
-## 6. Web Application Security Hygiene
-
-### 6.1 CSRF Protection
-- Use anti-CSRF tokens for any state-changing API calls. Integrate Next.js CSRF middleware or implement synchronizer tokens stored in cookies.
-
-### 6.2 Security Headers
-- In `next.config.js` (or a custom server), add these headers:
-  - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
-  - `X-Content-Type-Options: nosniff`
-  - `X-Frame-Options: DENY`
-  - `Referrer-Policy: no-referrer-when-downgrade`
-  - `Content-Security-Policy`: restrict script/style/src to self and trusted CDNs.
-
-### 6.3 Secure Cookies
-- Set `Secure`, `HttpOnly`, `SameSite=Strict` on all cookies. Avoid storing sensitive data in `localStorage`.
-
-### 6.4 Prevent XSS
-- Escape or encode all user-supplied data in React templates. Avoid `dangerouslySetInnerHTML` unless content is sanitized.
-
----
-
-## 7. Infrastructure & Configuration Management
-
-- Harden your hosting environment (e.g., Vercel/Netlify) by disabling unnecessary endpoints (GraphQL/GraphiQL playgrounds in production).
-- Rotate secrets and API keys regularly via your secrets manager.
-- Maintain minimal privileges: e.g., database accounts should only have read/write on required tables.
-- Keep Node.js, Next.js, and all system packages up to date.
-
----
-
-## 8. Dependency Management
-
-- Commit and maintain `package-lock.json` to guarantee reproducible builds.
-- Integrate a vulnerability scanner (e.g., GitHub Dependabot, Snyk) to monitor and alert on CVEs in dependencies.
-- Trim unused packages; each added library increases the attack surface.
+- **Secure Dependencies**
+  - Audit `package.json` dependencies regularly with `npm audit` or GitHub Dependabot.
+  - Upgrade stale or vulnerable packages (Next.js, React, shadcn/ui, Tailwind) promptly.
+- **Lockfiles**
+  - Commit `package-lock.json` to ensure deterministic builds.
+- **Minimal Footprint**
+  - Remove unused libraries (e.g., Drizzle ORM, PostgreSQL client) once replaced by the GAS API client.
 
 ---
 
-Adherence to these guidelines will ensure that **codeguide-starter** remains secure, maintainable, and resilient as it evolves. Regularly review and update this document to reflect new threats and best practices.
+By following these guidelines, you ensure the **ai-lms-portal-starter** remains secure by design, minimizing attack surfaces while protecting user data and privacy. Regularly revisit and update these controls as the codebase and threat landscape evolve.
